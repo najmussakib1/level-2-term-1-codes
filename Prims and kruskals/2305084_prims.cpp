@@ -1,4 +1,9 @@
-#include <bits/stdc++.h>
+// #include <bits/stdc++.h>
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <utility>
+#include <climits>
 using namespace std;
 void prim_algorithm(long long root, vector<vector<pair<long long, long long> > > &adj, long long n) {
     vector<bool> visited(n, false);
