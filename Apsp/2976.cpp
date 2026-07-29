@@ -43,15 +43,12 @@ int main()
 
             for (int j = 0; j < 26; j++)
             {
-                if (dist[k][j] == INF)
-                    continue;
-
-                dist[i][j] = min(dist[i][j],
-                                 dist[i][k] + dist[k][j]);
+                if (dist[k][j] == INF) continue;
+                dist[i][j] = min(dist[i][j], dist[i][k]+ dist[k][j]);
             }
         }
     }
-
+    
     long long totalCost = 0;
 
     for (int i = 0; i < source.size(); i++)
