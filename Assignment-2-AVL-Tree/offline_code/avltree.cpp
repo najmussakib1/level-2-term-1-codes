@@ -2,7 +2,21 @@
 #include<vector>
 #include<algorithm>
 #include<fstream>
+#include <chrono>
 using namespace std;
+
+long long insert_count = 0, insert_total = 0;
+long long erase_count = 0, erase_total = 0;
+long long find_count = 0, find_total = 0;
+long long traverse_count = 0, traverse_total = 0;
+void print_timing(string operation, long long count, long long total) {
+    cout << operation << " , "<< count << " , "<< total << " , ";
+
+    if (count == 0) cout << "N/A";
+    else cout << (double)total / count;
+    cout << endl;
+}
+
 struct node{
     int val;
     int left;
@@ -197,6 +211,7 @@ int main(int argc,char *argv[]){
     while(input>>op){
         if(op=='I'){
             input>>x;
+            auto start = chrono::high_resolution_clock::now();
             if(insert(x)){
                 print(root,output);
                 output<<endl;
@@ -204,9 +219,14 @@ int main(int argc,char *argv[]){
             else{
                 output<<"duplicate"<<endl;
             }
+            auto finish = chrono::high_resolution_clock::now();
+
+            insert_total += chrono::duration_cast<chrono::nanoseconds> (finish - start).count();
+            insert_count++;
         }
         else if(op=='D'){
             input>>x;
+            auto start = chrono::high_resolution_clock::now();
             if(erase(x)){
                 print(root,output);
                 output<<endl;
@@ -214,21 +234,37 @@ int main(int argc,char *argv[]){
             else{
                 output<<"not found"<<endl;
             }
+            auto finish = chrono::high_resolution_clock::now();
+            erase_total += chrono::duration_cast<chrono::nanoseconds> (finish - start).count();
+            erase_count++;
         }
         else if(op=='T'){
+            traverse_count++;
+            auto start = chrono::high_resolution_clock::now();
             bool first = true;
+
             print_inorder(root,first,output);
             output<<endl;
+            auto finish = chrono::high_resolution_clock::now();
+            traverse_total += chrono::duration_cast<chrono::nanoseconds> (finish - start).count();
         }
         else if(op=='F'){
+
             input>>x;
+            auto start = chrono::high_resolution_clock::now();
             if(find(x)){
                 output<<"found"<<endl;
             }
             else{
                 output<<"not found"<<endl;
             }
+            auto finish = chrono::high_resolution_clock::now();
+            find_total += chrono::duration_cast<chrono::nanoseconds> (finish - start).count();
+            find_count++;
         }
     }
-
+    print_timing("insert", insert_count, insert_total);
+    print_timing("delete", erase_count, erase_total);
+    print_timing("find", find_count, find_total);
+    print_timing("traverse", traverse_count, traverse_total);
 }
