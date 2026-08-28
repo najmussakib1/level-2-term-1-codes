@@ -1,15 +1,4 @@
-// CSE208 - Data Structures and Algorithm Sessional
-// Implementation of Hash Table Data Structure
-//
-// Supports:
-//   - Dynamic hash table (insert / search / delete), size always prime
-//   - Two hash functions: Hash1 (djb2) and Hash2 (FNV-1a)
-//   - Three collision resolution techniques: Chaining, Double Hashing, Custom Probing
-//   - Random unique word generator
-//   - Report generation (collisions + average search hits) for 10,000 words of length 10
-//
-// Compile:  g++ -O2 -std=c++17 hashtable.cpp -o hashtable
-// Run:      ./hashtable
+
 
 #include <vector>
 #include <list>
@@ -25,19 +14,13 @@
 #include <iomanip>
 using namespace std;
 
-// =====================================================================
-// Single-source configuration parameters (Section 1)
-// =====================================================================
-struct Config {
-    static constexpr long long INITIAL_SIZE   = 13;     // initial table size (must be prime)
-    static constexpr double    LOAD_HIGH      = 0.5;    // expand if load factor exceeds this
-    static constexpr double    LOAD_LOW       = 0.25;   // compact if load factor falls below this
+struct config {
+    static constexpr long long init_size = 13;    
+    static constexpr double    load_high = 0.5;   
+    static constexpr double    load_low  = 0.25;  
 };
 
-// =====================================================================
-// Prime helpers
-// =====================================================================
-bool isPrime(long long n) {
+bool is_prime(long long n) {
     if (n < 2) return false;
     if (n < 4) return true;
     if (n % 2 == 0 || n % 3 == 0) return false;
@@ -46,34 +29,30 @@ bool isPrime(long long n) {
     return true;
 }
 
-// smallest prime strictly greater than `bound`
-long long smallestPrimeAbove(double bound) {
-    long long c = (long long)floor(bound) + 1;
-    while (!isPrime(c)) c++;
-    return c;
+// smallest prime strictly bigger than num
+long long next_prime(double num) {
+    long long p = (long long)floor(num) + 1;
+    while (!is_prime(p)) p++;
+    return p;
 }
 
-// largest prime strictly smaller than `bound`
-long long largestPrimeBelow(double bound) {
-    long long c = (long long)ceil(bound) - 1;
-    while (c > 1 && !isPrime(c)) c--;
-    if (c < 2) c = 2;
-    return c;
+// biggest prime strictly smaller than num
+long long prev_prime(double num) {
+    long long p = (long long)ceil(num) - 1;
+    while (p > 1 && !is_prime(p)) p--;
+    if (p < 2) p = 2;
+    return p;
 }
 
-// =====================================================================
-// Hash functions (Section 3)
-// =====================================================================
 
-// Hash1: djb2 (Dan Bernstein) - widely used string hash
-unsigned long long hash1(const string& key) {
+unsigned long long hash_one(const string& key) {
     unsigned long long h = 5381;
-    for (unsigned char c : key) h = ((h << 5) + h) + c;   // h*33 + c
+    for (unsigned char c : key) h = ((h << 5) + h) + c; 
     return h;
 }
 
-// Hash2: FNV-1a - well established, good avalanche behaviour
-unsigned long long hash2(const string& key) {
+
+unsigned long long hash_two(const string& key) {
     unsigned long long h = 14695981039346656037ULL;
     for (unsigned char c : key) {
         h ^= c;
@@ -82,284 +61,268 @@ unsigned long long hash2(const string& key) {
     return h;
 }
 
-using HashFunc = function<unsigned long long(const string&)>;
+using hash_func = function<unsigned long long(const string&)>;
 
-// A simple, independent secondary hash used to build the probing step
-// (auxHash(k) in Section 4.2 / 4.3). Kept intentionally simple.
-unsigned long long secondaryMix(const string& key) {
+unsigned long long mix_hash(const string& key) {
     unsigned long long s = 0;
     for (unsigned char c : key) s = s * 31ULL + c;
     return s;
 }
 
-// auxHash(k): returns a step size in [1, R] that is coprime-friendly with
-// table size N by deriving it from a prime R < N.
-long long auxHash(const string& key, long long tableSize) {
-    long long R = (tableSize > 3) ? largestPrimeBelow(tableSize) : 1;
-    if (R < 1) R = 1;
-    long long step = 1 + (long long)(secondaryMix(key) % (unsigned long long)R);
-    return step; // in [1, R]  (never 0, so probing always advances)
+long long aux_hash(const string& key, long long table_size) {
+    long long r = (table_size > 3) ? prev_prime(table_size) : 1;
+    if (r < 1) r = 1;
+    long long step = 1 + (long long)(mix_hash(key) % (unsigned long long)r);
+    return step;
 }
 
-// =====================================================================
-// Technique 1: Chaining (Section 4.1)
-// =====================================================================
-class ChainingHashTable {
+
+class chain_table {
 public:
-    explicit ChainingHashTable(HashFunc hf) : hf(move(hf)) {
-        tableSize = Config::INITIAL_SIZE;
-        table.assign(tableSize, {});
-        count = 0;
-        insertsSinceExpansion = 0;
-        deletesSinceCompaction = 0;
-        collisions = 0;
+    explicit chain_table(hash_func f) : hf(move(f)) {
+        table_size = config::init_size;
+        arr.assign(table_size, {});
+        cnt = 0;
+        ins_after_grow = 0;
+        del_after_shrink = 0;
+        coll = 0;
     }
 
-    // Returns false if key already exists (duplicate discarded)
-    bool insert(const string& key, int value) {
-        long long idx = (long long)(hf(key) % (unsigned long long)tableSize);
-        for (auto& kv : table[idx])
-            if (kv.first == key) return false; // duplicate
+    bool insert(const string& key, int val) {
+        long long idx = (long long)(hf(key) % (unsigned long long)table_size);
+        for (auto& kv : arr[idx])
+            if (kv.first == key) return false;
 
-        if (!table[idx].empty()) collisions++;  // bucket already occupied by another key
+        if (!arr[idx].empty()) coll++; 
 
-        table[idx].push_back({key, value});
-        count++;
-        insertsSinceExpansion++;
-        maybeExpand();
+        arr[idx].push_back({key, val});
+        cnt++;
+        ins_after_grow++;
+        grow_if_needed();
         return true;
     }
 
     bool remove(const string& key) {
-        long long idx = (long long)(hf(key) % (unsigned long long)tableSize);
-        auto& lst = table[idx];
-        for (auto it = lst.begin(); it != lst.end(); ++it) {
+        long long idx = (long long)(hf(key) % (unsigned long long)table_size);
+        auto& bucket = arr[idx];
+        for (auto it = bucket.begin(); it != bucket.end(); ++it) {
             if (it->first == key) {
-                lst.erase(it);
-                count--;
-                deletesSinceCompaction++;
-                maybeCompact();
+                bucket.erase(it);
+                cnt--;
+                del_after_shrink++;
+                shrink_if_needed();
                 return true;
             }
         }
         return false;
     }
-
-    // Returns number of accesses to find key (>=1), or -1 if not found
     long long search(const string& key) const {
-        long long idx = (long long)(hf(key) % (unsigned long long)tableSize);
-        long long hits = 0;
-        for (auto& kv : table[idx]) {
-            hits++;
-            if (kv.first == key) return hits;
+        long long idx = (long long)(hf(key) % (unsigned long long)table_size);
+        long long hit = 0;
+        for (auto& kv : arr[idx]) {
+            hit++;
+            if (kv.first == key) return hit;
         }
         return -1;
     }
 
-    long long collisionCount() const { return collisions; }
-    long long size() const { return tableSize; }
-    long long elementCount() const { return count; }
+    long long get_coll() const { return coll; }
+    long long get_size() const { return table_size; }
+    long long get_cnt() const { return cnt; }
 
 private:
-    HashFunc hf;
-    vector<list<pair<string,int>>> table;
-    long long tableSize, count;
-    long long insertsSinceExpansion, deletesSinceCompaction, collisions;
+    hash_func hf;
+    vector<list<pair<string,int>>> arr;
+    long long table_size, cnt;
+    long long ins_after_grow, del_after_shrink, coll;
 
-    void maybeExpand() {
-        if (tableSize == 0) return;
-        double lf = (double)count / (double)tableSize;
-        // expand only after at least n/2 insertions since previous expansion
-        if (lf > Config::LOAD_HIGH && insertsSinceExpansion >= count / 2) {
-            long long newSize = smallestPrimeAbove(2.0 * tableSize);
-            rehash(newSize);
-            insertsSinceExpansion = 0;
+    void grow_if_needed() {
+        if (table_size == 0) return;
+        double load = (double)cnt / (double)table_size;
+
+        if (load > config::load_high && ins_after_grow >= cnt / 2) {
+            long long new_size = next_prime(2.0 * table_size);
+            rebuild(new_size);
+            ins_after_grow = 0;
         }
     }
-    void maybeCompact() {
-        if (tableSize == Config::INITIAL_SIZE) return; // never compact below/at initial size
-        double lf = (double)count / (double)tableSize;
-        if (lf < Config::LOAD_LOW && deletesSinceCompaction >= count / 2) {
-            long long newSize = largestPrimeBelow(tableSize / 2.0);
-            if (newSize < Config::INITIAL_SIZE) newSize = Config::INITIAL_SIZE;
-            rehash(newSize);
-            deletesSinceCompaction = 0;
+    void shrink_if_needed() {
+        if (table_size == config::init_size) return; // never shrink below/at start size
+        double load = (double)cnt / (double)table_size;
+        if (load < config::load_low && del_after_shrink >= cnt / 2) {
+            long long new_size = prev_prime(table_size / 2.0);
+            if (new_size < config::init_size) new_size = config::init_size;
+            rebuild(new_size);
+            del_after_shrink = 0;
         }
     }
-    void rehash(long long newSize) {
-        vector<list<pair<string,int>>> newTable(newSize);
-        for (auto& bucket : table)
+    void rebuild(long long new_size) {
+        vector<list<pair<string,int>>> new_arr(new_size);
+        for (auto& bucket : arr)
             for (auto& kv : bucket)
-                newTable[(long long)(hf(kv.first) % (unsigned long long)newSize)].push_back(kv);
-        table = move(newTable);
-        tableSize = newSize;
+                new_arr[(long long)(hf(kv.first) % (unsigned long long)new_size)].push_back(kv);
+        arr = move(new_arr);
+        table_size = new_size;
     }
 };
 
-// =====================================================================
-// Technique 2 & 3: Open addressing (Double Hashing / Custom Probing)
-// Sections 4.2 and 4.3
-// =====================================================================
-enum class SlotState { EMPTY, OCCUPIED, DELETED };
+enum class slot_state { empty_slot, used_slot, deleted_slot };
 
-struct Slot {
-    SlotState state = SlotState::EMPTY;
+struct slot {
+    slot_state state = slot_state::empty_slot;
     string key;
-    int value = 0;
+    int val = 0;
 };
 
-class OpenAddressingHashTable {
+class open_table {
 public:
-    enum class Mode { DOUBLE_HASHING, CUSTOM_PROBING };
+    enum class probe_mode { double_hash, custom_probe };
 
-    OpenAddressingHashTable(HashFunc hf, Mode mode, long long c1 = 1, long long c2 = 3)
-        : hf(move(hf)), mode(mode), C1(c1), C2(c2) {
-        tableSize = Config::INITIAL_SIZE;
-        table.assign(tableSize, Slot());
-        count = 0;
-        insertsSinceExpansion = 0;
-        deletesSinceCompaction = 0;
-        collisions = 0;
+    open_table(hash_func f, probe_mode m, long long c1 = 1, long long c2 = 3)
+        : hf(move(f)), mode(m), c1(c1), c2(c2) {
+        table_size = config::init_size;
+        arr.assign(table_size, slot());
+        cnt = 0;
+        ins_after_grow = 0;
+        del_after_shrink = 0;
+        coll = 0;
     }
 
-    bool insert(const string& key, int value) {
-        long long h = (long long)(hf(key) % (unsigned long long)tableSize);
-        long long step = auxHash(key, tableSize);
+    bool insert(const string& key, int val) {
+        long long start = (long long)(hf(key) % (unsigned long long)table_size);
+        long long step = aux_hash(key, table_size);
 
-        bool collided = false;
-        long long insertPos = -1;
+        bool bumped = false;
+        long long put_here = -1;
 
-        for (long long i = 0; i < tableSize; i++) {
-            long long idx = probe(h, step, i);
-            if (table[idx].state == SlotState::OCCUPIED) {
-                if (table[idx].key == key) return false; // duplicate
-                if (i == 0) collided = true;              // initial probe slot was taken
+        for (long long i = 0; i < table_size; i++) {
+            long long idx = probe(start, step, i);
+            if (arr[idx].state == slot_state::used_slot) {
+                if (arr[idx].key == key) return false; 
+                if (i == 0) bumped = true;         
             } else {
-                if (insertPos == -1) insertPos = idx;
-                if (table[idx].state == SlotState::EMPTY) break;
+                if (put_here == -1) put_here = idx;
+                if (arr[idx].state == slot_state::empty_slot) break;
             }
         }
-        if (insertPos == -1) return false; // table full (should not happen; we resize proactively)
+        if (put_here == -1) return false; 
 
-        table[insertPos] = {SlotState::OCCUPIED, key, value};
-        if (collided) collisions++;
-        count++;
-        insertsSinceExpansion++;
-        maybeExpand();
+        arr[put_here] = {slot_state::used_slot, key, val};
+        if (bumped) coll++;
+        cnt++;
+        ins_after_grow++;
+        grow_if_needed();
         return true;
     }
 
     long long search(const string& key) const {
-        long long h = (long long)(hf(key) % (unsigned long long)tableSize);
-        long long step = auxHash(key, tableSize);
-        long long hits = 0;
-        for (long long i = 0; i < tableSize; i++) {
-            long long idx = probe(h, step, i);
-            hits++;
-            if (table[idx].state == SlotState::EMPTY) return -1;
-            if (table[idx].state == SlotState::OCCUPIED && table[idx].key == key) return hits;
+        long long start = (long long)(hf(key) % (unsigned long long)table_size);
+        long long step = aux_hash(key, table_size);
+        long long hit = 0;
+        for (long long i = 0; i < table_size; i++) {
+            long long idx = probe(start, step, i);
+            hit++;
+            if (arr[idx].state == slot_state::empty_slot) return -1;
+            if (arr[idx].state == slot_state::used_slot && arr[idx].key == key) return hit;
         }
         return -1;
     }
 
     bool remove(const string& key) {
-        long long h = (long long)(hf(key) % (unsigned long long)tableSize);
-        long long step = auxHash(key, tableSize);
-        for (long long i = 0; i < tableSize; i++) {
-            long long idx = probe(h, step, i);
-            if (table[idx].state == SlotState::EMPTY) return false;
-            if (table[idx].state == SlotState::OCCUPIED && table[idx].key == key) {
-                table[idx].state = SlotState::DELETED;
-                count--;
-                deletesSinceCompaction++;
-                maybeCompact();
+        long long start = (long long)(hf(key) % (unsigned long long)table_size);
+        long long step = aux_hash(key, table_size);
+        for (long long i = 0; i < table_size; i++) {
+            long long idx = probe(start, step, i);
+            if (arr[idx].state == slot_state::empty_slot) return false;
+            if (arr[idx].state == slot_state::used_slot && arr[idx].key == key) {
+                arr[idx].state = slot_state::deleted_slot;
+                cnt--;
+                del_after_shrink++;
+                shrink_if_needed();
                 return true;
             }
         }
         return false;
     }
 
-    long long collisionCount() const { return collisions; }
-    long long size() const { return tableSize; }
-    long long elementCount() const { return count; }
+    long long get_coll() const { return coll; }
+    long long get_size() const { return table_size; }
+    long long get_cnt() const { return cnt; }
 
 private:
-    HashFunc hf;
-    Mode mode;
-    long long C1, C2;
-    vector<Slot> table;
-    long long tableSize, count;
-    long long insertsSinceExpansion, deletesSinceCompaction, collisions;
+    hash_func hf;
+    probe_mode mode;
+    long long c1, c2;
+    vector<slot> arr;
+    long long table_size, cnt;
+    long long ins_after_grow, del_after_shrink, coll;
 
-    long long probe(long long h, long long step, long long i) const {
+    long long probe(long long start, long long step, long long i) const {
         long long idx;
-        if (mode == Mode::DOUBLE_HASHING) {
-            idx = h + i * step;                              // doubleHash(k,i)
+        if (mode == probe_mode::double_hash) {
+            idx = start + i * step;                        
         } else {
-            idx = h + C1 * i * step + C2 * i * i;             // customHash(k,i)
+            idx = start + c1 * i * step + c2 * i * i;      
         }
-        idx %= tableSize;
-        if (idx < 0) idx += tableSize;
+        idx %= table_size;
+        if (idx < 0) idx += table_size;
         return idx;
     }
 
-    // insert without touching statistics/counters — used only during rehash
-    void insertRaw(const string& key, int value) {
-        long long h = (long long)(hf(key) % (unsigned long long)tableSize);
-        long long step = auxHash(key, tableSize);
-        for (long long i = 0; i < tableSize; i++) {
-            long long idx = probe(h, step, i);
-            if (table[idx].state != SlotState::OCCUPIED) {
-                table[idx] = {SlotState::OCCUPIED, key, value};
+
+    void put_no_count(const string& key, int val) {
+        long long start = (long long)(hf(key) % (unsigned long long)table_size);
+        long long step = aux_hash(key, table_size);
+        for (long long i = 0; i < table_size; i++) {
+            long long idx = probe(start, step, i);
+            if (arr[idx].state != slot_state::used_slot) {
+                arr[idx] = {slot_state::used_slot, key, val};
                 return;
             }
         }
     }
 
-    void maybeExpand() {
-        double lf = (double)count / (double)tableSize;
-        if (lf > Config::LOAD_HIGH && insertsSinceExpansion >= count / 2) {
-            long long newSize = smallestPrimeAbove(2.0 * tableSize);
-            rehash(newSize);
-            insertsSinceExpansion = 0;
+    void grow_if_needed() {
+        double load = (double)cnt / (double)table_size;
+        if (load > config::load_high && ins_after_grow >= cnt / 2) {
+            long long new_size = next_prime(2.0 * table_size);
+            rebuild(new_size);
+            ins_after_grow = 0;
         }
     }
-    void maybeCompact() {
-        if (tableSize == Config::INITIAL_SIZE) return;
-        double lf = (double)count / (double)tableSize;
-        if (lf < Config::LOAD_LOW && deletesSinceCompaction >= count / 2) {
-            long long newSize = largestPrimeBelow(tableSize / 2.0);
-            if (newSize < Config::INITIAL_SIZE) newSize = Config::INITIAL_SIZE;
-            rehash(newSize);
-            deletesSinceCompaction = 0;
+    void shrink_if_needed() {
+        if (table_size == config::init_size) return;
+        double load = (double)cnt / (double)table_size;
+        if (load < config::load_low && del_after_shrink >= cnt / 2) {
+            long long new_size = prev_prime(table_size / 2.0);
+            if (new_size < config::init_size) new_size = config::init_size;
+            rebuild(new_size);
+            del_after_shrink = 0;
         }
     }
-    void rehash(long long newSize) {
-        vector<Slot> old = move(table);
-        tableSize = newSize;
-        table.assign(newSize, Slot());
-        for (auto& s : old)
-            if (s.state == SlotState::OCCUPIED)
-                insertRaw(s.key, s.value);
+    void rebuild(long long new_size) {
+        vector<slot> old_arr = move(arr);
+        table_size = new_size;
+        arr.assign(new_size, slot());
+        for (auto& s : old_arr)
+            if (s.state == slot_state::used_slot)
+                put_no_count(s.key, s.val);
     }
 };
 
-// =====================================================================
-// Random unique word generator (Section 1.3)
-// =====================================================================
-class WordGenerator {
+class word_gen {
 public:
-    explicit WordGenerator(int length, unsigned seed = random_device{}())
+    explicit word_gen(int length, unsigned seed = random_device{}())
         : len(length), rng(seed), dist(0, 25) {}
 
-    // generate `count` unique words of fixed length `len`
-    vector<string> generateUnique(int count) {
+
+    vector<string> make_words(int how_many) {
         vector<string> words;
-        words.reserve(count);
+        words.reserve(how_many);
         unordered_set<string> seen;
-        seen.reserve(count * 2);
-        while ((int)words.size() < count) {
-            string w = oneWord();
+        seen.reserve(how_many * 2);
+        while ((int)words.size() < how_many) {
+            string w = one_word();
             if (seen.insert(w).second) words.push_back(w);
         }
         return words;
@@ -370,23 +333,21 @@ private:
     mt19937 rng;
     uniform_int_distribution<int> dist;
 
-    string oneWord() {
+    string one_word() {
         string w(len, 'a');
         for (int i = 0; i < len; i++) w[i] = char('a' + dist(rng));
         return w;
     }
 };
 
-// =====================================================================
-// Report generation (Section 5)
-// =====================================================================
-struct TechniqueResult {
-    long long collisions = 0;
-    double avgHits = 0.0;
+
+struct result_row {
+    long long coll = 0;
+    double avg_hit = 0.0;
 };
 
-void printReportTable(const TechniqueResult r[3][2]) {
-    // r[technique][hashFuncIndex]  technique: 0=Chaining,1=DoubleHashing,2=CustomProbing
+void print_table(const result_row res[3][2]) {
+
     const char* names[3] = {"Chaining Method", "Double Hashing", "Custom Probing"};
     cout << "\n";
     cout << left << setw(20) << "Technique"
@@ -395,10 +356,10 @@ void printReportTable(const TechniqueResult r[3][2]) {
     cout << string(86, '-') << "\n";
     for (int t = 0; t < 3; t++) {
         cout << left << setw(20) << names[t]
-             << right << setw(18) << r[t][0].collisions
-             << setw(14) << fixed << setprecision(3) << r[t][0].avgHits
-             << setw(20) << r[t][1].collisions
-             << setw(14) << fixed << setprecision(3) << r[t][1].avgHits
+             << right << setw(18) << res[t][0].coll
+             << setw(14) << fixed << setprecision(3) << res[t][0].avg_hit
+             << setw(20) << res[t][1].coll
+             << setw(14) << fixed << setprecision(3) << res[t][1].avg_hit
              << "\n";
     }
     cout << "\n";
@@ -409,15 +370,13 @@ int main() {
 
     cout << "=== CSE208 Hash Table Assignment ===\n\n";
 
-    // ---------------------------------------------------------------
-    // Small correctness demo matching the spec's example (Section 2)
-    // ---------------------------------------------------------------
+
     {
         cout << "--- Demo (Section 2 example) ---\n";
-        vector<string> demoWords = {"ancient", "puzzled", "benefit", "ancient", "zigzags"};
-        ChainingHashTable demo(hash1);
+        vector<string> demo_words = {"ancient", "puzzled", "benefit", "ancient", "zigzags"};
+        chain_table demo(hash_one);
         int seq = 1;
-        for (auto& w : demoWords) {
+        for (auto& w : demo_words) {
             if (demo.insert(w, seq)) {
                 cout << "(" << w << ", " << seq << ")\n";
                 seq++;
@@ -428,90 +387,87 @@ int main() {
         cout << "\n";
     }
 
-    // ---------------------------------------------------------------
-    // Full evaluation: 10,000 unique words of length 10
-    // ---------------------------------------------------------------
-    const int N_WORDS = 10000;
-    const int WORD_LEN = 10;
-    const int N_SEARCH = 1000;
 
-    cout << "Generating " << N_WORDS << " unique random words of length "
-         << WORD_LEN << " ...\n";
-    WordGenerator gen(WORD_LEN, 42);
-    vector<string> words = gen.generateUnique(N_WORDS);
+    const int word_count = 10000;
+    const int word_len = 10;
+    const int search_count = 1000;
 
-    // sanity check: hash-value uniqueness requirement (>=60% unique hash values)
+    cout << "Generating " << word_count << " unique random words of length "
+         << word_len << " ...\n";
+    word_gen gen(word_len, 42);
+    vector<string> words = gen.make_words(word_count);
+
     {
-        unordered_set<unsigned long long> uniq1, uniq2;
-        for (auto& w : words) { uniq1.insert(hash1(w)); uniq2.insert(hash2(w)); }
-        cout << "Hash1 unique hash values: " << uniq1.size() << " / " << N_WORDS
-             << " (" << fixed << setprecision(1) << 100.0 * uniq1.size() / N_WORDS << "%)\n";
-        cout << "Hash2 unique hash values: " << uniq2.size() << " / " << N_WORDS
-             << " (" << fixed << setprecision(1) << 100.0 * uniq2.size() / N_WORDS << "%)\n\n";
+        unordered_set<unsigned long long> u1, u2;
+        for (auto& w : words) { u1.insert(hash_one(w)); u2.insert(hash_two(w)); }
+        cout << "Hash1 unique hash values: " << u1.size() << " / " << word_count
+             << " (" << fixed << setprecision(1) << 100.0 * u1.size() / word_count << "%)\n";
+        cout << "Hash2 unique hash values: " << u2.size() << " / " << word_count
+             << " (" << fixed << setprecision(1) << 100.0 * u2.size() / word_count << "%)\n\n";
     }
 
-    // pick 1000 random words (from the generated set) to search for
+
     mt19937 rng(123);
-    vector<string> searchWords;
+    vector<string> search_words;
     {
-        vector<int> idxs(N_WORDS);
-        iota(idxs.begin(), idxs.end(), 0);
-        shuffle(idxs.begin(), idxs.end(), rng);
-        for (int i = 0; i < N_SEARCH; i++) searchWords.push_back(words[idxs[i]]);
+        vector<int> idx_list(word_count);
+        iota(idx_list.begin(), idx_list.end(), 0);
+        shuffle(idx_list.begin(), idx_list.end(), rng);
+        for (int i = 0; i < search_count; i++) search_words.push_back(words[idx_list[i]]);
     }
 
-    TechniqueResult results[3][2]; // [technique][hashFuncIndex]
+    result_row res[3][2]; 
 
-    HashFunc funcs[2] = {hash1, hash2};
-    const char* funcNames[2] = {"Hash1 (djb2)", "Hash2 (FNV-1a)"};
+    hash_func funcs[2] = {hash_one, hash_two};
+    const char* func_names[2] = {"Hash1 (djb2)", "Hash2 (FNV-1a)"};
 
-    for (int hIdx = 0; hIdx < 2; hIdx++) {
-        cout << "--- Evaluating with " << funcNames[hIdx] << " ---\n";
+    for (int h = 0; h < 2; h++) {
+        cout << "--- Evaluating with " << func_names[h] << " ---\n";
 
-        // Chaining
+
         {
-            ChainingHashTable table(funcs[hIdx]);
+            chain_table t(funcs[h]);
             int seq = 1;
-            for (auto& w : words) if (table.insert(w, seq)) seq++;
-            long long totalHits = 0;
-            for (auto& w : searchWords) totalHits += table.search(w);
-            results[0][hIdx].collisions = table.collisionCount();
-            results[0][hIdx].avgHits = (double)totalHits / N_SEARCH;
-            cout << "  Chaining      -> collisions: " << table.collisionCount()
-                 << ", avg hits: " << results[0][hIdx].avgHits
-                 << ", final table size: " << table.size() << "\n";
+            for (auto& w : words) if (t.insert(w, seq)) seq++;
+            long long total = 0;
+            for (auto& w : search_words) total += t.search(w);
+            res[0][h].coll = t.get_coll();
+            res[0][h].avg_hit = (double)total / search_count;
+            cout << "  Chaining      -> collisions: " << t.get_coll()
+                 << ", avg hits: " << res[0][h].avg_hit
+                 << ", final table size: " << t.get_size() << "\n";
         }
-        // Double Hashing
+
         {
-            OpenAddressingHashTable table(funcs[hIdx], OpenAddressingHashTable::Mode::DOUBLE_HASHING);
+            open_table t(funcs[h], open_table::probe_mode::double_hash);
             int seq = 1;
-            for (auto& w : words) if (table.insert(w, seq)) seq++;
-            long long totalHits = 0;
-            for (auto& w : searchWords) totalHits += table.search(w);
-            results[1][hIdx].collisions = table.collisionCount();
-            results[1][hIdx].avgHits = (double)totalHits / N_SEARCH;
-            cout << "  Double Hash   -> collisions: " << table.collisionCount()
-                 << ", avg hits: " << results[1][hIdx].avgHits
-                 << ", final table size: " << table.size() << "\n";
+            for (auto& w : words) if (t.insert(w, seq)) seq++;
+            long long total = 0;
+            for (auto& w : search_words) total += t.search(w);
+            res[1][h].coll = t.get_coll();
+            res[1][h].avg_hit = (double)total / search_count;
+            cout << "  Double Hash   -> collisions: " << t.get_coll()
+                 << ", avg hits: " << res[1][h].avg_hit
+                 << ", final table size: " << t.get_size() << "\n";
         }
-        // Custom Probing
+
         {
-            OpenAddressingHashTable table(funcs[hIdx], OpenAddressingHashTable::Mode::CUSTOM_PROBING, 1, 3);
+            open_table t(funcs[h], open_table::probe_mode::custom_probe, 1, 3);
             int seq = 1;
-            for (auto& w : words) if (table.insert(w, seq)) seq++;
-            long long totalHits = 0;
-            for (auto& w : searchWords) totalHits += table.search(w);
-            results[2][hIdx].collisions = table.collisionCount();
-            results[2][hIdx].avgHits = (double)totalHits / N_SEARCH;
-            cout << "  Custom Probe  -> collisions: " << table.collisionCount()
-                 << ", avg hits: " << results[2][hIdx].avgHits
-                 << ", final table size: " << table.size() << "\n";
+            for (auto& w : words) if (t.insert(w, seq)) seq++;
+            long long total = 0;
+            for (auto& w : search_words) total += t.search(w);
+            res[2][h].coll = t.get_coll();
+            res[2][h].avg_hit = (double)total / search_count;
+            cout << "  Custom Probe  -> collisions: " << t.get_coll()
+                 << ", avg hits: " << res[2][h].avg_hit
+                 << ", final table size: " << t.get_size() << "\n";
         }
         cout << "\n";
     }
 
     cout << "=== Final Report (Section 5) ===\n";
-    printReportTable(results);
+    print_table(res);
 
     return 0;
 }
